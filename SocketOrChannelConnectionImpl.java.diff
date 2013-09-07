@@ -1,0 +1,84 @@
+--- SocketOrChannelConnectionImpl.java	2011-05-26 17:10:34.000000000 +1200
++++ SocketOrChannelConnectionImplUpdated.java	2011-05-25 12:24:28.000000000 +1200
+@@ -1491,42 +1491,47 @@
+                     dprint(".purgeCalls: SystemException" + ex
+                            + "; continuing " + this);
+             }
++			
++	    try {
++		// Mark the state of the connection
++		// and determine the request status
++		org.omg.CORBA.CompletionStatus completion_status;
++		synchronized ( stateEvent ){
++		    if (minor_code == ORBUtilSystemException.CONNECTION_REBIND) {
++			state = CLOSE_RECVD;
++			systemException.completed = CompletionStatus.COMPLETED_NO;
++		    } else {
++			state = ABORT;
++			systemException.completed = CompletionStatus.COMPLETED_MAYBE;
++		    }
++		    
++		    stateEvent.notifyAll();
++		}
++
++		try {
++		    socket.getInputStream().close();
++		    socket.getOutputStream().close();
++		    socket.close();
++		} catch (Exception ex) {
++		    if (orb.transportDebugFlag) {
++			dprint(".purgeCalls: Exception closing socket: " + ex
++			  + " " + this);
++		    }
++		}
++
++		// Signal all threads with outstanding requests on this
++		// connection and give them the SystemException;
++
++		responseWaitingRoom.signalExceptionToAllWaiters(systemException);
++	    } finally {
++		if (contactInfo != null) {
++		    ((OutboundConnectionCache)getConnectionCache()).remove(contactInfo);
++		} else if (acceptor != null) {
++		    ((InboundConnectionCache)getConnectionCache()).remove(this);
++		}
++	    }
+ 
+-            // Mark the state of the connection
+-            // and determine the request status
+-            org.omg.CORBA.CompletionStatus completion_status;
+-            synchronized ( stateEvent ){
+-                if (minor_code == ORBUtilSystemException.CONNECTION_REBIND) {
+-                    state = CLOSE_RECVD;
+-                    systemException.completed = CompletionStatus.COMPLETED_NO;
+-                } else {
+-                    state = ABORT;
+-                    systemException.completed = CompletionStatus.COMPLETED_MAYBE;
+-                }
+-                stateEvent.notifyAll();
+-            }
+-
+-            try {
+-                socket.getInputStream().close();
+-                socket.getOutputStream().close();
+-                socket.close();
+-            } catch (Exception ex) {
+-                if (orb.transportDebugFlag) {
+-                    dprint(".purgeCalls: Exception closing socket: " + ex
+-                           + " " + this);
+-                }
+-            }
+ 
+-            // Signal all threads with outstanding requests on this
+-            // connection and give them the SystemException;
+-
+-            responseWaitingRoom.signalExceptionToAllWaiters(systemException);
+-
+-            if (contactInfo != null) {
+-                ((OutboundConnectionCache)getConnectionCache()).remove(contactInfo);
+-            } else if (acceptor != null) {
+-                ((InboundConnectionCache)getConnectionCache()).remove(this);
+-            }
+ 
+             //
+             // REVISIT: Stop the reader thread
